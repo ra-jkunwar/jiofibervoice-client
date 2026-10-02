@@ -2,7 +2,6 @@ package com.example.jiofibervoice
 
 import android.content.Context
 import java.io.BufferedReader
-import java.io.ByteArrayOutputStream
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -13,18 +12,26 @@ import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
-class JioGatewayClient(private val context: Context, private val gatewayIp: String) {
+class JioGatewayClient(private val context: Context, var gatewayIp: String) {
     private val prefs = context.getSharedPreferences("client", Context.MODE_PRIVATE)
 
     val clientMac: String
         get() = prefs.getString("client_mac", null) ?: run {
             val bytes = ByteArray(6).also { SecureRandom().nextBytes(it) }
-            // Locally administered, unicast-looking identifier. This is an app identifier, not Wi-Fi MAC.
+            // Locally administered, unicast-looking identifier.
             bytes[0] = ((bytes[0].toInt() and 0xFC) or 0x02).toByte()
             val mac = bytes.joinToString(":") { "%02x".format(it) }
             prefs.edit().putString("client_mac", mac).apply()
             mac
         }
+
+    fun resetAppIdentifier(): String {
+        val bytes = ByteArray(6).also { SecureRandom().nextBytes(it) }
+        bytes[0] = ((bytes[0].toInt() and 0xFC) or 0x02).toByte()
+        val mac = bytes.joinToString(":") { "%02x".format(it) }
+        prefs.edit().putString("client_mac", mac).remove("juice_cookie").apply()
+        return mac
+    }
 
     var cookie: String?
         get() = prefs.getString("juice_cookie", null)
@@ -34,7 +41,50 @@ class JioGatewayClient(private val context: Context, private val gatewayIp: Stri
 
     fun requestAccount(): HttpResponse = httpPlain("GET", "/request_account")
 
-    fun requestOtp(): HttpResponse {
+    /**
+     * Attempts to fetch SIP provisioning directly without sending OTP.
+     * Works if the current MAC/app identifier has already been whitelisted on the router.
+     */
+    fun checkDirectProvisioning(noOtp: Boolean = false): HttpResponse {
+        val params = linkedMapOf(
+            "terminal_sw_version" to "RCSAndrd",
+            "terminal_vendor" to "Android",
+            "terminal_model" to "Android",
+            "SMS_port" to "0",
+            "act_type" to "volatile",
+            "IMSI" to "",
+            "msisdn" to "",
+            "IMEI" to "",
+            "vers" to "0",
+            "token" to "",
+            "rcs_state" to "0",
+            "rcs_version" to "5.1B",
+            "rcs_profile" to "joyn_blackbird",
+            "client_vendor" to "JUIC",
+            "default_sms_app" to "2",
+            "default_vvm_app" to "0",
+            "device_type" to "vvm",
+            "client_version" to "JSEAndrd-1.0",
+            "mac_address" to clientMac,
+            "alias" to "JioFiberVoiceClient",
+            "nwk_intf" to if (noOtp) "eth" else "wifi"
+        )
+
+        val query = params.entries.joinToString("&") {
+            "${urlEncode(it.key)}=${urlEncode(it.value)}"
+        }
+
+        return httpsLocal(
+            "GET",
+            "/?$query",
+            mapOf("User-Agent" to "JioFiberVoiceClient/1.0")
+        )
+    }
+
+    /**
+     * Initiates the OTP registration request against the local gateway HTTPS port.
+     */
+    fun requestOtp(noOtp: Boolean = false): HttpResponse {
         val params = linkedMapOf(
             "IMEI" to "",
             "rcs_profile" to "joyn_blackbird",
@@ -57,7 +107,7 @@ class JioGatewayClient(private val context: Context, private val gatewayIp: Stri
             "token" to "",
             "alias" to "JioFiberVoiceClient",
             "mac_address" to clientMac,
-            "nwk_intf" to "wifi",
+            "nwk_intf" to if (noOtp) "eth" else "wifi",
             "op_type" to "add"
         )
 
@@ -81,7 +131,7 @@ class JioGatewayClient(private val context: Context, private val gatewayIp: Stri
 
     fun verifyOtp(otp: String): HttpResponse {
         require(otp.matches(Regex("\\d{4,8}"))) { "OTP must be numeric" }
-        val c = cookie ?: error("No OTP session cookie. Send OTP first.")
+        val c = cookie ?: error("No OTP session cookie. Please request OTP first.")
         return httpsLocal("GET", "/?OTP=${urlEncode(otp)}", mapOf("Cookie" to c))
     }
 
@@ -103,11 +153,11 @@ class JioGatewayClient(private val context: Context, private val gatewayIp: Stri
         val socketFactory = insecureLocalSslFactory()
         val socket = socketFactory.createSocket() as SSLSocket
         socket.use { s ->
-            s.connect(InetSocketAddress(gatewayIp, 8443), 5000)
+            s.connect(InetSocketAddress(gatewayIp, 8443), 6000)
             val params = s.sslParameters
             params.serverNames = listOf(javax.net.ssl.SNIHostName("jiofiber.local.html"))
             s.sslParameters = params
-            s.soTimeout = 7000
+            s.soTimeout = 8000
             s.startHandshake()
             val req = buildString {
                 append("$method $path HTTP/1.1\r\n")

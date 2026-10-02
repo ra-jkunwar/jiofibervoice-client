@@ -1,13 +1,592 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp">
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="JioFiber Voice Client" android:textSize="26sp" android:textStyle="bold" />
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Local-only MVP: discovers the AirFiber gateway, pairs by OTP, and inspects SIP provisioning." />
-        <Button android:id="@+id/discoverButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="1. Discover AirFiber" />
-        <TextView android:id="@+id/accountText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textIsSelectable="true" />
-        <Button android:id="@+id/requestOtpButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="2. Send OTP" />
-        <EditText android:id="@+id/otpEdit" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="number" android:hint="OTP" />
-        <Button android:id="@+id/verifyButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="3. Verify OTP / Get SIP config" />
-        <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:textIsSelectable="true" />
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F8F9FA">
+
+    <!-- Top App Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#0A2540"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="JioFiber Voice"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/topStatusBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#1E3A5F"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:text="Offline"
+                android:textColor="#CBD5E1"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Tab Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="10dp">
+
+            <Button
+                android:id="@+id/tabDialerBtn"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:text="Dialer"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="#0A2540"
+                android:background="#FFFFFF"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/tabSettingsBtn"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:text="Gateway &amp; Pair"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:background="#1E3A5F"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/tabLogsBtn"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:text="SIP Logs"
+                android:textSize="13sp"
+                android:textColor="#FFFFFF"
+                android:background="#1E3A5F" />
+        </LinearLayout>
     </LinearLayout>
-</ScrollView>
+
+    <!-- Content Area -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- ================= TAB 1: DIALER ================= -->
+        <ScrollView
+            android:id="@+id/viewDialer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Incoming Call Alert Card -->
+                <LinearLayout
+                    android:id="@+id/incomingCallCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#FEF3C7"
+                    android:padding="16dp"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Incoming Call"
+                        android:textColor="#92400E"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/incomingCallerText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="+91 XXXXXXXXXX"
+                        android:textColor="#1F2937"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:layout_marginTop="4dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp">
+
+                        <Button
+                            android:id="@+id/btnAnswerCall"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:text="Answer"
+                            android:textColor="#FFFFFF"
+                            android:background="#16A34A"
+                            android:layout_marginEnd="8dp" />
+
+                        <Button
+                            android:id="@+id/btnDeclineCall"
+                            android:layout_width="0dp"
+                            android:layout_height="48dp"
+                            android:layout_weight="1"
+                            android:text="Decline"
+                            android:textColor="#FFFFFF"
+                            android:background="#DC2626" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Active Call Control Card -->
+                <LinearLayout
+                    android:id="@+id/activeCallCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#EFF6FF"
+                    android:padding="16dp"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/activeCallStateText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Calling..."
+                        android:textColor="#1D4ED8"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/activeCallRemoteText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="+91 XXXXXXXXXX"
+                        android:textColor="#111827"
+                        android:textSize="22sp"
+                        android:textStyle="bold"
+                        android:layout_marginTop="4dp" />
+
+                    <TextView
+                        android:id="@+id/activeCallTimerText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="00:00"
+                        android:textColor="#4B5563"
+                        android:textSize="14sp"
+                        android:layout_marginTop="2dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="12dp">
+
+                        <Button
+                            android:id="@+id/btnMute"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:text="Mute"
+                            android:textSize="12sp"
+                            android:textColor="#374151"
+                            android:background="#E5E7EB"
+                            android:layout_marginEnd="6dp" />
+
+                        <Button
+                            android:id="@+id/btnSpeaker"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:text="Speaker"
+                            android:textSize="12sp"
+                            android:textColor="#374151"
+                            android:background="#E5E7EB"
+                            android:layout_marginEnd="6dp" />
+
+                        <Button
+                            android:id="@+id/btnHangUp"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:text="End Call"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="#FFFFFF"
+                            android:background="#DC2626" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Dial Number Display -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="#FFFFFF"
+                    android:padding="8dp">
+
+                    <EditText
+                        android:id="@+id/dialNumberEdit"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="Enter phone number"
+                        android:inputType="phone"
+                        android:textColor="#111827"
+                        android:textSize="24sp"
+                        android:background="@null"
+                        android:padding="8dp" />
+
+                    <Button
+                        android:id="@+id/btnBackspace"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:text="⌫"
+                        android:textSize="18sp"
+                        android:textColor="#4B5563"
+                        android:background="?android:attr/selectableItemBackground" />
+                </LinearLayout>
+
+                <!-- Keypad Grid -->
+                <TableLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:stretchColumns="*">
+
+                    <TableRow android:layout_marginBottom="8dp">
+                        <Button android:id="@+id/key1" android:layout_height="56dp" android:text="1" android:textSize="22sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key2" android:layout_height="56dp" android:text="2\nABC" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key3" android:layout_height="56dp" android:text="3\nDEF" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                    </TableRow>
+
+                    <TableRow android:layout_marginBottom="8dp">
+                        <Button android:id="@+id/key4" android:layout_height="56dp" android:text="4\nGHI" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key5" android:layout_height="56dp" android:text="5\nJKL" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key6" android:layout_height="56dp" android:text="6\nMNO" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                    </TableRow>
+
+                    <TableRow android:layout_marginBottom="8dp">
+                        <Button android:id="@+id/key7" android:layout_height="56dp" android:text="7\nPQRS" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key8" android:layout_height="56dp" android:text="8\nTUV" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key9" android:layout_height="56dp" android:text="9\nWXYZ" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                    </TableRow>
+
+                    <TableRow android:layout_marginBottom="8dp">
+                        <Button android:id="@+id/keyStar" android:layout_height="56dp" android:text="*" android:textSize="22sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/key0" android:layout_height="56dp" android:text="0\n+" android:textSize="16sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                        <Button android:id="@+id/keyHash" android:layout_height="56dp" android:text="#" android:textSize="22sp" android:textColor="#111827" android:background="#FFFFFF" android:layout_margin="3dp" />
+                    </TableRow>
+                </TableLayout>
+
+                <!-- Call Button -->
+                <Button
+                    android:id="@+id/btnCall"
+                    android:layout_width="match_parent"
+                    android:layout_height="54dp"
+                    android:layout_marginTop="12dp"
+                    android:text="📞  CALL"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:background="#16A34A" />
+
+                <!-- Call Status / Info Hint -->
+                <TextView
+                    android:id="@+id/dialerStatusHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:layout_marginTop="12dp"
+                    android:text="Prefix numbers with ISD code (+91) or 0"
+                    android:textColor="#6B7280"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ================= TAB 2: SETTINGS & PAIRING ================= -->
+        <ScrollView
+            android:id="@+id/viewSettings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Gateway Section -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="1. JioFiber / AirFiber Gateway"
+                    android:textColor="#111827"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp">
+
+                    <EditText
+                        android:id="@+id/gatewayIpEdit"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="192.168.29.1"
+                        android:hint="Gateway IP (e.g. 192.168.29.1)"
+                        android:textColor="#111827"
+                        android:textSize="14sp"
+                        android:background="#FFFFFF"
+                        android:padding="8dp" />
+
+                    <Button
+                        android:id="@+id/btnDiscoverGw"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:text="Auto-Detect"
+                        android:textSize="12sp"
+                        android:background="#0A2540"
+                        android:textColor="#FFFFFF"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/macInfoText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="Client Identifier: ..."
+                    android:textColor="#4B5563"
+                    android:textSize="12sp" />
+
+                <!-- Pairing Section -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="2. Pairing &amp; Provisioning"
+                    android:textColor="#111827"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="20dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp">
+
+                    <Button
+                        android:id="@+id/btnCheckDirect"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="Check Whitelist (No OTP)"
+                        android:textSize="11sp"
+                        android:textColor="#1E3A5F"
+                        android:background="#E0E7FF"
+                        android:layout_marginEnd="6dp" />
+
+                    <Button
+                        android:id="@+id/btnRequestOtp"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="Send SMS OTP"
+                        android:textSize="11sp"
+                        android:textColor="#FFFFFF"
+                        android:background="#0A2540" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/otpResultText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text=""
+                    android:textColor="#059669"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp">
+
+                    <EditText
+                        android:id="@+id/otpInputEdit"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:hint="Enter 6-digit OTP"
+                        android:inputType="number"
+                        android:textColor="#111827"
+                        android:textSize="14sp"
+                        android:background="#FFFFFF"
+                        android:padding="8dp" />
+
+                    <Button
+                        android:id="@+id/btnVerifyOtp"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:text="Verify &amp; Save"
+                        android:textSize="12sp"
+                        android:textColor="#FFFFFF"
+                        android:background="#16A34A"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+
+                <!-- SIP Account Section -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="3. Saved SIP Account"
+                    android:textColor="#111827"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="20dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#FFFFFF"
+                    android:padding="12dp"
+                    android:layout_marginTop="6dp">
+
+                    <TextView
+                        android:id="@+id/accountSummaryText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="No SIP profile stored. Complete pairing above."
+                        android:textColor="#374151"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="12dp">
+
+                    <Button
+                        android:id="@+id/btnRegisterSip"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="Register SIP"
+                        android:textColor="#FFFFFF"
+                        android:background="#16A34A"
+                        android:layout_marginEnd="6dp" />
+
+                    <Button
+                        android:id="@+id/btnUnregisterSip"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:text="Disconnect"
+                        android:textColor="#374151"
+                        android:background="#E5E7EB"
+                        android:layout_marginEnd="6dp" />
+
+                    <Button
+                        android:id="@+id/btnClearAccount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:text="Clear"
+                        android:textColor="#DC2626"
+                        android:background="#FEE2E2" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ================= TAB 3: SIP LOGS ================= -->
+        <LinearLayout
+            android:id="@+id/viewLogs"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Live SIP Diagnostics"
+                    android:textColor="#111827"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnClearLogs"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="Clear"
+                    android:textSize="11sp"
+                    android:textColor="#374151"
+                    android:background="#E5E7EB" />
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/logsScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="#111827"
+                android:padding="8dp">
+
+                <TextView
+                    android:id="@+id/sipLogsText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="#10B981"
+                    android:textSize="11sp"
+                    android:typeface="monospace"
+                    android:textIsSelectable="true"
+                    android:text="-- Ready --\n" />
+            </ScrollView>
+        </LinearLayout>
+
+    </FrameLayout>
+</LinearLayout>
