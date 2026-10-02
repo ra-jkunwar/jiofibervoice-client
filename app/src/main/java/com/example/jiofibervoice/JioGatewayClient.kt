@@ -35,12 +35,47 @@ class JioGatewayClient(private val context: Context, private val gatewayIp: Stri
     fun requestAccount(): HttpResponse = httpPlain("GET", "/request_account")
 
     fun requestOtp(): HttpResponse {
-        val query = "mac_address=${urlEncode(clientMac)}&nwk_intf=wifi&op_type=add"
-        val response = httpsLocal("GET", "/?$query", emptyMap())
+        val params = linkedMapOf(
+            "IMEI" to "",
+            "rcs_profile" to "joyn_blackbird",
+            "SMS_port" to "0",
+            "default_sms_app" to "2",
+            "msisdn" to "",
+            "rcs_state" to "0",
+            "vers" to "0",
+            "terminal_vendor" to "Android",
+            "terminal_model" to "Android",
+            "provisioning_version" to "2.0",
+            "rcs_version" to "5.1B",
+            "device_type" to "vvm",
+            "act_type" to "volatile",
+            "terminal_sw_version" to "RCSAndrd",
+            "default_vvm_app" to "0",
+            "IMSI" to "",
+            "client_vendor" to "JUIC",
+            "client_version" to "JSEAndrd-1.0",
+            "token" to "",
+            "alias" to "JioFiberVoiceClient",
+            "mac_address" to clientMac,
+            "nwk_intf" to "wifi",
+            "op_type" to "add"
+        )
+
+        val query = params.entries.joinToString("&") {
+            "${urlEncode(it.key)}=${urlEncode(it.value)}"
+        }
+
+        val response = httpsLocal(
+            "GET",
+            "/?$query",
+            mapOf("User-Agent" to "JioFiberVoiceClient/1.0")
+        )
+
         response.headers["set-cookie"]?.let { header ->
             val c = header.substringBefore(';').trim()
             if (c.isNotBlank()) cookie = c
         }
+
         return response
     }
 
@@ -76,7 +111,7 @@ class JioGatewayClient(private val context: Context, private val gatewayIp: Stri
             s.startHandshake()
             val req = buildString {
                 append("$method $path HTTP/1.1\r\n")
-                append("Host: jiofiber.local.html:8443\r\n")
+                append("Host: jiofiber.local.html\r\n")
                 append("Connection: close\r\n")
                 extra.forEach { (k, v) -> append("$k: $v\r\n") }
                 append("\r\n")
