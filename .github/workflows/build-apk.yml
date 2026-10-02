@@ -26,17 +26,36 @@ jobs:
           gradle-version: '8.9'
 
       - name: Configure Android SDK
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" \
-                     "platforms;android-35" \
-                     "build-tools;35.0.0"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $ANDROID_HOME"
+            find "$ANDROID_HOME" -maxdepth 4 -type f -name sdkmanager || true
+            exit 1
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          SDK_DIR="$(dirname "$SDKMANAGER")"
+          echo "$SDK_DIR" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" "platform-tools" \
+                         "platforms;android-35" \
+                         "build-tools;35.0.0"
+
+      - name: Verify Android SDK
+        run: |
+          which sdkmanager
+          sdkmanager --list_installed | head -50
 
       - name: Build APK
         run: |
-          gradle assembleDebug --no-daemon
+          gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
