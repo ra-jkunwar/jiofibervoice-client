@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp">
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="JioFiber Voice Client" android:textSize="26sp" android:textStyle="bold" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Local-only MVP: discovers the AirFiber gateway, pairs by OTP, and inspects SIP provisioning." />
+        <Button android:id="@+id/discoverButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:text="1. Discover AirFiber" />
+        <TextView android:id="@+id/accountText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textIsSelectable="true" />
+        <Button android:id="@+id/requestOtpButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:text="2. Send OTP" />
+        <EditText android:id="@+id/otpEdit" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="number" android:hint="OTP" />
+        <Button android:id="@+id/verifyButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="3. Verify OTP / Get SIP config" />
+        <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:textIsSelectable="true" />
+    </LinearLayout>
+</ScrollView>
