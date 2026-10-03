@@ -19,7 +19,7 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
     val clientMac: String
         get() = prefs.getString("client_mac", null) ?: run {
             val bytes = ByteArray(6).also { SecureRandom().nextBytes(it) }
-            // Locally administered, unicast-looking identifier.
+            // Locally administered, unicast identifier (e.g. 02:xx:xx:xx:xx:xx)
             bytes[0] = ((bytes[0].toInt() and 0xFC) or 0x02).toByte()
             val mac = bytes.joinToString(":") { "%02x".format(it) }
             prefs.edit().putString("client_mac", mac).apply()
@@ -60,31 +60,44 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
     }
 
     /**
-     * Builds gateway query params exactly matching JioJoin / JFC-SIP-Configuration-Tool:
-     * terminal_sw_version=RCSAndrd
-     * terminal_vendor=<hostname>
-     * terminal_model=<hostname>
-     * SMS_port=0
-     * act_type=volatile
-     * IMSI=
-     * msisdn=
-     * IMEI=
-     * vers=0
-     * token=
-     * rcs_state=0
-     * rcs_version=5.1B
-     * rcs_profile=joyn_blackbird
-     * client_vendor=JUIC
-     * default_sms_app=2
-     * default_vvm_app=0
-     * device_type=vvm
-     * client_version=JSEAndrd-1.0
-     * mac_address=<mac>
-     * alias=<hostname>
-     * nwk_intf=eth | wifi
-     * op_type=add (optional)
+     * Builds WITS query matching Discussion #70 reference implementation:
+     * This vendor returns "Set-Cookie: WITRCSeConfigCookie=<uuid>" and "x-amn: <number>".
      */
-    private fun buildGatewayQuery(opTypeAdd: Boolean, isEth: Boolean): String {
+    private fun buildWitsQuery(opTypeAdd: Boolean, isEth: Boolean): String {
+        val nwk = if (isEth) "eth" else "wifi"
+        val params = linkedMapOf(
+            "IMEI" to "",
+            "rcs_profile" to "joyn_blackbird",
+            "SMS_port" to "0",
+            "default_sms_app" to "1",
+            "msisdn" to "",
+            "rcs_state" to "0",
+            "vers" to "0",
+            "terminal_vendor" to "sams",
+            "terminal_model" to "aosp",
+            "provisioning_version" to "2.0",
+            "rcs_version" to "5.1B",
+            "device_type" to "vvm",
+            "act_type" to "volatile",
+            "terminal_sw_version" to "7.1.2",
+            "default_vvm_app" to "0",
+            "IMSI" to "",
+            "client_vendor" to "WITS",
+            "client_version" to "RCSAndrd-5.3",
+            "alias" to "itsyourap",
+            "mac_address" to clientMac,
+            "nwk_intf" to nwk
+        )
+        if (opTypeAdd) {
+            params["op_type"] = "add"
+        }
+        return params.entries.joinToString("&", postfix = "&") { "${it.key}=${it.value}" }
+    }
+
+    /**
+     * Builds JUIC query matching JioJoin native app / STB implementation:
+     */
+    private fun buildJuicQuery(opTypeAdd: Boolean, isEth: Boolean): String {
         val hostname = getSanitizedDeviceName()
         val nwk = if (isEth) "eth" else "wifi"
         val params = linkedMapOf(
@@ -118,35 +131,66 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
 
     /**
      * Attempts to fetch SIP provisioning directly without sending OTP.
-     * When useEthBypass is true, sends nwk_intf=eth (Jio Set-Top Box emulation).
-     * Jio ONTs automatically return the XML provisioning document for STBs without requiring OTP!
-     * If that does not return XML, falls back to nwk_intf=wifi to check whitelist.
+     * Tries STB bypass (nwk_intf=eth) using both WITS and JUIC formats.
+     * Jio ONTs return the XML provisioning document for STBs without requiring OTP.
      */
     fun checkDirectProvisioning(useEthBypass: Boolean = true): HttpResponse {
         if (useEthBypass) {
-            val ethQuery = buildGatewayQuery(opTypeAdd = false, isEth = true)
-            val ethResponse = httpsLocal("GET", "/?$ethQuery", emptyMap())
-            if (ethResponse.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
-                return ethResponse
+            // Attempt 1: WITS eth query
+            val witsEth = buildWitsQuery(opTypeAdd = false, isEth = true)
+            val r1 = httpsLocal("GET", "/?$witsEth", emptyMap())
+            if (r1.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
+                return r1
+            }
+
+            // Attempt 2: JUIC eth query
+            val juicEth = buildJuicQuery(opTypeAdd = false, isEth = true)
+            val r2 = httpsLocal("GET", "/?$juicEth", emptyMap())
+            if (r2.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
+                return r2
             }
         }
-        val wifiQuery = buildGatewayQuery(opTypeAdd = false, isEth = false)
-        return httpsLocal("GET", "/?$wifiQuery", emptyMap())
+
+        // Fallback: check if already whitelisted via wifi query
+        val wifiQuery = buildWitsQuery(opTypeAdd = false, isEth = false)
+        val rWifi = httpsLocal("GET", "/?$wifiQuery", emptyMap())
+        if (rWifi.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
+            return rWifi
+        }
+        val juicWifi = buildJuicQuery(opTypeAdd = false, isEth = false)
+        return httpsLocal("GET", "/?$juicWifi", emptyMap())
     }
 
     /**
      * Initiates the OTP registration request against the local gateway HTTPS port.
-     * Follows the exact reference flow of JioJoin / JFC-SIP-Configuration-Tool with client_vendor=JUIC.
+     * Uses client_vendor=WITS first to trigger generation of WITRCSeConfigCookie.
+     * Extracts and persists WITRCSeConfigCookie for OTP verification.
      */
-    fun requestOtp(noOtp: Boolean = false): HttpResponse {
+    fun requestOtp(): HttpResponse {
         cookie = null
 
-        val query = buildGatewayQuery(opTypeAdd = !noOtp, isEth = noOtp)
-        val response = httpsLocal("GET", "/?$query", emptyMap())
+        // 1. Try WITS flow (primary reference flow from Discussion #70)
+        val witsQuery = buildWitsQuery(opTypeAdd = true, isEth = false)
+        var response = httpsLocal("GET", "/?$witsQuery", emptyMap())
 
-        // Extract WITRCSeConfigCookie or any session cookie from raw headers or Set-Cookie
+        extractAndSaveCookie(response)
+
+        // 2. If cookie was not obtained with WITS and response was not successful, try JUIC flow
+        if (cookie == null && response.status != 200) {
+            val juicQuery = buildJuicQuery(opTypeAdd = true, isEth = false)
+            val juicResp = httpsLocal("GET", "/?$juicQuery", emptyMap())
+            extractAndSaveCookie(juicResp)
+            if (cookie != null || juicResp.status == 200) {
+                response = juicResp
+            }
+        }
+
+        return response
+    }
+
+    private fun extractAndSaveCookie(response: HttpResponse) {
         val allHeadersText = response.rawHeaderLines.joinToString("\n") + "\n" + (response.headers["set-cookie"] ?: "")
-        val witMatch = Regex("WITRCSeConfigCookie=([^;\\r\\n\\s]+)", RegexOption.IGNORE_CASE).find(allHeadersText)
+        val witMatch = Regex("""WITRCSeConfigCookie=([^;\r\n\s]+)""", RegexOption.IGNORE_CASE).find(allHeadersText)
         if (witMatch != null) {
             val token = witMatch.groupValues[1]
             cookie = "WITRCSeConfigCookie=$token"
@@ -158,27 +202,25 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
                 }
             }
         }
-
-        return response
     }
 
     /**
      * Verifies the OTP sent to user's mobile.
-     * If session cookie was captured, includes Cookie header.
-     * If cookie is not present (or verification fails without MAC), falls back to including mac_address parameter.
+     * Strictly requires a valid OTP session cookie.
      */
     fun verifyOtp(otp: String): HttpResponse {
-        require(otp.matches(Regex("\\d{4,8}"))) { "OTP must be numeric" }
-        val headers = mutableMapOf<String, String>()
-        cookie?.let { headers["Cookie"] = it }
+        require(otp.matches(Regex("""\d{4,8}"""))) { "OTP must be numeric" }
+        val currentCookie = cookie ?: error("No OTP session cookie. Please request OTP first.")
 
-        // Attempt 1: Standard JioJoin / JFC verify: GET /?OTP=<otp>
+        val headers = mapOf("Cookie" to currentCookie)
+
+        // Attempt 1: Standard JioJoin / JFC verify: GET /?OTP=<otp> with Cookie
         val r1 = httpsLocal("GET", "/?OTP=$otp", headers)
         if (r1.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
             return r1
         }
 
-        // Attempt 2: If router requires mac_address or session was bound to MAC: GET /?OTP=<otp>&mac_address=<mac>
+        // Attempt 2: Fallback with mac_address: GET /?OTP=<otp>&mac_address=<mac> with Cookie
         val r2 = httpsLocal("GET", "/?OTP=$otp&mac_address=$clientMac", headers)
         if (r2.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
             return r2

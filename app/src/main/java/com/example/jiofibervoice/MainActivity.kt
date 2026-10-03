@@ -349,12 +349,12 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
             Thread {
                 try {
                     val client = gatewayClient ?: return@Thread
-                    val r = client.requestOtp(noOtp = false)
+                    val r = client.requestOtp()
                     val status = r.status
                     val hasCookie = !client.cookie.isNullOrBlank()
                     val cookieStr = if (hasCookie) "PRESENT (${client.cookie})" else "ABSENT"
                     val linkedNumber = r.headers["x-amn"] ?: "ABSENT"
-                    val isSuccess = (status == 200)
+                    val isSuccess = (status == 200 && hasCookie)
 
                     appendLog("[GATEWAY] OTP Request -> HTTP $status | Cookie: $cookieStr | Linked: $linkedNumber")
                     if (r.rawHeaderLines.isNotEmpty()) {
@@ -383,7 +383,7 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                             if (hasCookie) {
                                 append("\nReady! Enter received OTP and tap 'Verify & Save'.")
                             } else {
-                                append("\nCookie not sent by router; will verify via Client MAC.")
+                                append("\nRouter did not return session cookie. Please tap 'Send SMS OTP' again.")
                             }
                         }
                     }
@@ -423,16 +423,22 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                 otpResultText.text = "Please enter the 4 to 8 digit OTP received on your mobile"
                 return@setOnClickListener
             }
+            val client = gatewayClient
+            if (client?.cookie.isNullOrBlank()) {
+                otpResultText.setTextColor(Color.parseColor("#DC2626"))
+                otpResultText.text = "No OTP session cookie. Please tap 'Send SMS OTP' first."
+                return@setOnClickListener
+            }
             otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
             otpResultText.text = "Verifying OTP ($otp)..."
             btnVerifyOtp.isEnabled = false
 
             Thread {
                 try {
-                    val client = gatewayClient ?: return@Thread
-                    val cookieInfo = client.cookie ?: "None (Using MAC)"
+                    val c = gatewayClient ?: return@Thread
+                    val cookieInfo = c.cookie ?: "None"
                     appendLog("[GATEWAY] Sending OTP verification for $otp with Cookie: $cookieInfo")
-                    val r = client.verifyOtp(otp)
+                    val r = c.verifyOtp(otp)
                     appendLog("[GATEWAY] Verify response HTTP ${r.status}, body length=${r.body.length}")
                     if (r.rawHeaderLines.isNotEmpty()) {
                         appendLog("[GATEWAY] Verify headers:\n" + r.rawHeaderLines.joinToString("\n"))
@@ -505,14 +511,15 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
         val otpLen = otpInputEdit.text.toString().trim().length
         val hasOtpEntered = otpLen in 4..8
         val hasCookie = !gatewayClient?.cookie.isNullOrBlank()
+        val canVerify = hasOtpEntered && hasCookie
 
         runOnUiThread {
-            btnVerifyOtp.isEnabled = hasOtpEntered
-            btnVerifyOtp.alpha = if (hasOtpEntered) 1.0f else 0.5f
+            btnVerifyOtp.isEnabled = canVerify
+            btnVerifyOtp.alpha = if (canVerify) 1.0f else 0.4f
             btnVerifyOtp.text = when {
-                !hasOtpEntered -> "Verify & Save"
-                hasCookie -> "Verify & Save (Cookie OK)"
-                else -> "Verify & Save (Direct/MAC)"
+                !hasCookie -> "Verify & Save (Request OTP First)"
+                !hasOtpEntered -> "Enter OTP to Verify"
+                else -> "Verify & Save"
             }
         }
     }

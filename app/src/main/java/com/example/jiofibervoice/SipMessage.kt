@@ -86,8 +86,8 @@ data class SipMessage(
     // Extract SDP audio parameters
     val sdpAudioIp: String?
         get() {
-            val match = Regex("""c=IN\s+IP4\s+([0-9.]+)""", RegexOption.IGNORE_CASE).find(body)
-            return match?.groupValues?.get(1)
+            val match = Regex("""c=IN\s+(?:IP4|IP6)\s+([^\s\r\n]+)""", RegexOption.IGNORE_CASE).find(body)
+            return match?.groupValues?.get(1)?.removeSurrounding("[", "]")
         }
 
     val sdpAudioPort: Int?
@@ -95,6 +95,19 @@ data class SipMessage(
             val match = Regex("""m=audio\s+(\d+)\s+""", RegexOption.IGNORE_CASE).find(body)
             return match?.groupValues?.get(1)?.toIntOrNull()
         }
+
+    val sdpAudioPayload: Int?
+        get() {
+            val match = Regex("""m=audio\s+\d+\s+RTP/(?:AVP|SAVP)\s+([0-9\s]+)""", RegexOption.IGNORE_CASE).find(body)
+            val firstPayload = match?.groupValues?.get(1)?.trim()?.split(Regex("""\s+"""))?.firstOrNull()
+            return firstPayload?.toIntOrNull()
+        }
+
+    val rseq: Long?
+        get() = header("RSeq")?.trim()?.toLongOrNull()
+
+    val is100relRequired: Boolean
+        get() = (header("Require")?.contains("100rel", ignoreCase = true) == true) || (rseq != null)
 
     fun toWireString(): String {
         return buildString {
