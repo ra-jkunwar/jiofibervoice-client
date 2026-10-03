@@ -413,7 +413,7 @@
                         android:layout_width="0dp"
                         android:layout_height="44dp"
                         android:layout_weight="1"
-                        android:text="Check Whitelist (No OTP)"
+                        android:text="Bypass OTP (STB Mode)"
                         android:textSize="11sp"
                         android:textColor="#1E3A5F"
                         android:background="#E0E7FF"

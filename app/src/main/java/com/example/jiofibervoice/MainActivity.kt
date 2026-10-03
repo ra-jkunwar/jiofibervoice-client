@@ -296,32 +296,42 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
         btnCheckDirect.setOnClickListener {
             updateGatewayIpFromEdit()
             otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
-            otpResultText.text = "Checking router whitelist..."
+            otpResultText.text = "Attempting STB bypass / Whitelist check..."
+            btnCheckDirect.isEnabled = false
             Thread {
                 try {
                     val client = gatewayClient ?: return@Thread
-                    val r = client.checkDirectProvisioning(noOtp = false)
+                    appendLog("[GATEWAY] Checking direct provisioning (STB mode / Whitelist)...")
+                    val r = client.checkDirectProvisioning(useEthBypass = true)
+                    appendLog("[GATEWAY] Direct check HTTP ${r.status}, body length=${r.body.length}")
                     if (r.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
                         val cfg = SipConfigParser.parse(r.body, client.gatewayIp)
                         cfg.saveToPrefs(this@MainActivity)
+                        appendLog("[GATEWAY] Direct provisioning successful! Found +${cfg.cleanUsername}")
                         runOnUiThread {
+                            btnCheckDirect.isEnabled = true
                             otpResultText.setTextColor(Color.parseColor("#059669"))
-                            otpResultText.text = "Success! Whitelist matched without OTP."
+                            otpResultText.text = "Provisioned without OTP (STB mode)! Linked: +${cfg.cleanUsername}"
                             refreshStoredAccountSummary()
                             startSipRegistration(cfg)
                             updateVerifyButtonState()
+                            switchTab(0)
                         }
                     } else {
                         runOnUiThread {
+                            btnCheckDirect.isEnabled = true
                             otpResultText.setTextColor(Color.parseColor("#4B5563"))
-                            otpResultText.text = "Device not whitelisted (HTTP ${r.status}). Tap 'Send SMS OTP'."
+                            otpResultText.text = "Device not pre-whitelisted (HTTP ${r.status}). Tap 'Send SMS OTP'."
                             updateVerifyButtonState()
                         }
                     }
                 } catch (e: Exception) {
+                    val err = e.message ?: e.javaClass.simpleName
+                    appendLog("[GATEWAY] Direct check failed: $err")
                     runOnUiThread {
+                        btnCheckDirect.isEnabled = true
                         otpResultText.setTextColor(Color.parseColor("#DC2626"))
-                        otpResultText.text = "Check error: ${e.message}"
+                        otpResultText.text = "Direct check error: $err"
                         updateVerifyButtonState()
                     }
                 }
@@ -344,7 +354,7 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                     val hasCookie = !client.cookie.isNullOrBlank()
                     val cookieStr = if (hasCookie) "PRESENT (${client.cookie})" else "ABSENT"
                     val linkedNumber = r.headers["x-amn"] ?: "ABSENT"
-                    val isSuccess = (status == 200 && hasCookie)
+                    val isSuccess = (status == 200)
 
                     appendLog("[GATEWAY] OTP Request -> HTTP $status | Cookie: $cookieStr | Linked: $linkedNumber")
                     if (r.rawHeaderLines.isNotEmpty()) {
@@ -355,7 +365,7 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                         append("OTP HTTP: ").append(status).append("\n")
                         append("Cookie: ").append(cookieStr).append("\n")
                         append("Linked number: ").append(linkedNumber)
-                        if (!isSuccess) {
+                        if (status != 200) {
                             if (r.rawHeaderLines.isNotEmpty()) {
                                 append("\nHeaders:\n")
                                 for (hl in r.rawHeaderLines.take(5)) {
@@ -368,6 +378,12 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                                 if (trimmedBody.length > 400) append("...")
                             } else {
                                 append("Body: (empty)")
+                            }
+                        } else {
+                            if (hasCookie) {
+                                append("\nReady! Enter received OTP and tap 'Verify & Save'.")
+                            } else {
+                                append("\nCookie not sent by router; will verify via Client MAC.")
                             }
                         }
                     }
@@ -391,18 +407,20 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
             }.start()
         }
 
+        otpInputEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                updateVerifyButtonState()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+
         btnVerifyOtp.setOnClickListener {
             updateGatewayIpFromEdit()
             val otp = otpInputEdit.text.toString().trim()
-            if (otp.isEmpty()) {
+            if (otp.length !in 4..8) {
                 otpResultText.setTextColor(Color.parseColor("#DC2626"))
-                otpResultText.text = "Please enter the OTP"
-                return@setOnClickListener
-            }
-            if (gatewayClient?.cookie.isNullOrBlank()) {
-                otpResultText.setTextColor(Color.parseColor("#DC2626"))
-                otpResultText.text = "No OTP session cookie. Please request OTP first."
-                updateVerifyButtonState()
+                otpResultText.text = "Please enter the 4 to 8 digit OTP received on your mobile"
                 return@setOnClickListener
             }
             otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
@@ -412,7 +430,8 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
             Thread {
                 try {
                     val client = gatewayClient ?: return@Thread
-                    appendLog("[GATEWAY] Sending OTP verification for $otp with Cookie: ${client.cookie}")
+                    val cookieInfo = client.cookie ?: "None (Using MAC)"
+                    appendLog("[GATEWAY] Sending OTP verification for $otp with Cookie: $cookieInfo")
                     val r = client.verifyOtp(otp)
                     appendLog("[GATEWAY] Verify response HTTP ${r.status}, body length=${r.body.length}")
                     if (r.rawHeaderLines.isNotEmpty()) {
@@ -483,9 +502,19 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
     }
 
     private fun updateVerifyButtonState() {
+        val otpLen = otpInputEdit.text.toString().trim().length
+        val hasOtpEntered = otpLen in 4..8
         val hasCookie = !gatewayClient?.cookie.isNullOrBlank()
-        btnVerifyOtp.isEnabled = hasCookie
-        btnVerifyOtp.alpha = if (hasCookie) 1.0f else 0.5f
+
+        runOnUiThread {
+            btnVerifyOtp.isEnabled = hasOtpEntered
+            btnVerifyOtp.alpha = if (hasOtpEntered) 1.0f else 0.5f
+            btnVerifyOtp.text = when {
+                !hasOtpEntered -> "Verify & Save"
+                hasCookie -> "Verify & Save (Cookie OK)"
+                else -> "Verify & Save (Direct/MAC)"
+            }
+        }
     }
 
     private fun updateGatewayIpFromEdit() {
