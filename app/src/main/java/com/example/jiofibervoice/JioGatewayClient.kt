@@ -43,7 +43,12 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
             }
         }
 
-    data class HttpResponse(val status: Int, val headers: Map<String, String>, val body: String)
+    data class HttpResponse(
+        val status: Int,
+        val headers: Map<String, String>,
+        val rawHeaderLines: List<String>,
+        val body: String
+    )
 
     fun requestAccount(): HttpResponse = httpPlain("GET", "/request_account")
 
@@ -52,97 +57,45 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
      * Works if the current MAC/app identifier has already been whitelisted on the router.
      */
     fun checkDirectProvisioning(noOtp: Boolean = false): HttpResponse {
-        val params = linkedMapOf(
-            "terminal_sw_version" to "RCSAndrd",
-            "terminal_vendor" to "Android",
-            "terminal_model" to "Android",
-            "SMS_port" to "0",
-            "act_type" to "volatile",
-            "IMSI" to "",
-            "msisdn" to "",
-            "IMEI" to "",
-            "vers" to "0",
-            "token" to "",
-            "rcs_state" to "0",
-            "rcs_version" to "5.1B",
-            "rcs_profile" to "joyn_blackbird",
-            "client_vendor" to "JUIC",
-            "default_sms_app" to "2",
-            "default_vvm_app" to "0",
-            "device_type" to "vvm",
-            "client_version" to "JSEAndrd-1.0",
-            "mac_address" to clientMac,
-            "alias" to "JioFiberVoiceClient",
-            "nwk_intf" to if (noOtp) "eth" else "wifi"
-        )
+        val nwk = if (noOtp) "eth" else "wifi"
+        val query = "IMEI=&rcs_profile=joyn_blackbird&SMS_port=0&default_sms_app=1&msisdn=&rcs_state=0&vers=0" +
+                "&terminal_vendor=sams&terminal_model=aosp&provisioning_version=2.0&rcs_version=5.1B" +
+                "&device_type=vvm&act_type=volatile&terminal_sw_version=7.1.2&default_vvm_app=0&IMSI=" +
+                "&client_vendor=WITS&client_version=RCSAndrd-5.3&alias=itsyourap" +
+                "&mac_address=$clientMac&nwk_intf=$nwk"
 
-        val query = params.entries.joinToString("&") {
-            "${urlEncode(it.key)}=${urlEncode(it.value)}"
-        }
-
-        return httpsLocal(
-            "GET",
-            "/?$query",
-            mapOf("User-Agent" to "JioFiberVoiceClient/1.0")
-        )
+        return httpsLocal("GET", "/?$query", emptyMap())
     }
 
     /**
      * Initiates the OTP registration request against the local gateway HTTPS port.
+     * Follows the exact reference flow of JioJoin/Juice:
+     * GET https://jiofiber.local.html:8443/?IMEI=&rcs_profile=joyn_blackbird&SMS_port=0&default_sms_app=1&msisdn=&rcs_state=0&vers=0&terminal_vendor=sams&terminal_model=aosp&provisioning_version=2.0&rcs_version=5.1B&device_type=vvm&act_type=volatile&terminal_sw_version=7.1.2&default_vvm_app=0&IMSI=&client_vendor=WITS&client_version=RCSAndrd-5.3&alias=itsyourap&mac_address=<mac>&nwk_intf=wifi&op_type=add
      */
     fun requestOtp(noOtp: Boolean = false): HttpResponse {
         cookie = null
-        val params = linkedMapOf(
-            "IMEI" to "",
-            "rcs_profile" to "joyn_blackbird",
-            "SMS_port" to "0",
-            "default_sms_app" to "2",
-            "msisdn" to "",
-            "rcs_state" to "0",
-            "vers" to "0",
-            "terminal_vendor" to "Android",
-            "terminal_model" to "Android",
-            "provisioning_version" to "2.0",
-            "rcs_version" to "5.1B",
-            "device_type" to "vvm",
-            "act_type" to "volatile",
-            "terminal_sw_version" to "RCSAndrd",
-            "default_vvm_app" to "0",
-            "IMSI" to "",
-            "client_vendor" to "JUIC",
-            "client_version" to "JSEAndrd-1.0",
-            "token" to "",
-            "alias" to "JioFiberVoiceClient",
-            "mac_address" to clientMac,
-            "nwk_intf" to if (noOtp) "eth" else "wifi",
-            "op_type" to "add"
-        )
 
-        val query = params.entries.joinToString("&") {
-            "${urlEncode(it.key)}=${urlEncode(it.value)}"
-        }
+        val nwk = if (noOtp) "eth" else "wifi"
+        val query = "IMEI=&rcs_profile=joyn_blackbird&SMS_port=0&default_sms_app=1&msisdn=&rcs_state=0&vers=0" +
+                "&terminal_vendor=sams&terminal_model=aosp&provisioning_version=2.0&rcs_version=5.1B" +
+                "&device_type=vvm&act_type=volatile&terminal_sw_version=7.1.2&default_vvm_app=0&IMSI=" +
+                "&client_vendor=WITS&client_version=RCSAndrd-5.3&alias=itsyourap" +
+                "&mac_address=$clientMac&nwk_intf=$nwk&op_type=add"
 
-        val response = httpsLocal(
-            "GET",
-            "/?$query",
-            mapOf("User-Agent" to "JioFiberVoiceClient/1.0")
-        )
+        val response = httpsLocal("GET", "/?$query", emptyMap())
 
-        response.headers["set-cookie"]?.let { header ->
-            val parts = header.split(";")
-            val cookiePairs = parts.map { it.trim() }.filter {
-                it.contains("=") &&
-                !it.startsWith("path=", ignoreCase = true) &&
-                !it.startsWith("expires=", ignoreCase = true) &&
-                !it.startsWith("max-age=", ignoreCase = true) &&
-                !it.startsWith("domain=", ignoreCase = true) &&
-                !it.startsWith("samesite=", ignoreCase = true)
-            }
-            if (cookiePairs.isNotEmpty()) {
-                cookie = cookiePairs.joinToString("; ")
-            } else {
-                val c = header.substringBefore(';').trim()
-                if (c.isNotBlank()) cookie = c
+        // Extract WITRCSeConfigCookie from raw headers or Set-Cookie
+        val allHeadersText = response.rawHeaderLines.joinToString("\n") + "\n" + (response.headers["set-cookie"] ?: "")
+        val witMatch = Regex("WITRCSeConfigCookie=([a-zA-Z0-9\\-]+)", RegexOption.IGNORE_CASE).find(allHeadersText)
+        if (witMatch != null) {
+            val token = witMatch.groupValues[1]
+            cookie = "WITRCSeConfigCookie=$token"
+        } else {
+            response.headers["set-cookie"]?.let { header ->
+                val firstPart = header.substringBefore(';').trim()
+                if (firstPart.contains('=')) {
+                    cookie = firstPart
+                }
             }
         }
 
@@ -152,7 +105,7 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
     fun verifyOtp(otp: String): HttpResponse {
         require(otp.matches(Regex("\\d{4,8}"))) { "OTP must be numeric" }
         val c = cookie ?: error("No OTP session cookie. Please request OTP first.")
-        return httpsLocal("GET", "/?OTP=${urlEncode(otp)}", mapOf("Cookie" to c, "User-Agent" to "JioFiberVoiceClient/1.0"))
+        return httpsLocal("GET", "/?OTP=$otp", mapOf("Cookie" to c))
     }
 
     private fun httpPlain(method: String, path: String): HttpResponse {
@@ -196,36 +149,47 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
         val statusLine = input.readLine() ?: error("Empty HTTP response")
         val status = statusLine.split(" ").getOrNull(1)?.toIntOrNull() ?: -1
         val headers = linkedMapOf<String, String>()
+        val rawHeaderLines = mutableListOf<String>()
         val setCookieLines = mutableListOf<String>()
         while (true) {
             val line = input.readLine() ?: break
             if (line.isEmpty()) break
+            rawHeaderLines.add(line)
             val idx = line.indexOf(':')
             if (idx > 0) {
                 val key = line.substring(0, idx).trim().lowercase()
                 val value = line.substring(idx + 1).trim()
                 if (key == "set-cookie") {
                     setCookieLines.add(value)
-                } else {
+                }
+                if (!headers.containsKey(key)) {
                     headers[key] = value
+                } else if (key == "set-cookie") {
+                    headers[key] = headers[key] + "; " + value
                 }
             }
         }
-        if (setCookieLines.isNotEmpty()) {
+        if (setCookieLines.isNotEmpty() && !headers.containsKey("set-cookie")) {
             headers["set-cookie"] = setCookieLines.joinToString("; ")
         }
         val contentLength = headers["content-length"]?.toIntOrNull()
-        val body = if (contentLength != null) {
-            val chars = CharArray(contentLength)
-            var read = 0
-            while (read < contentLength) {
-                val n = input.read(chars, read, contentLength - read)
-                if (n < 0) break
-                read += n
+        val body = try {
+            if (contentLength != null) {
+                val chars = CharArray(contentLength)
+                var read = 0
+                while (read < contentLength) {
+                    val n = input.read(chars, read, contentLength - read)
+                    if (n < 0) break
+                    read += n
+                }
+                String(chars, 0, read)
+            } else {
+                input.readText()
             }
-            String(chars, 0, read)
-        } else input.readText()
-        return HttpResponse(status, headers, body)
+        } catch (e: Exception) {
+            ""
+        }
+        return HttpResponse(status, headers, rawHeaderLines, body)
     }
 
     private fun insecureLocalSslFactory(): SSLSocketFactory {

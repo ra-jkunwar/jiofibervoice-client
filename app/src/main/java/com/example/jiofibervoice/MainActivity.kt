@@ -342,21 +342,32 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                     val r = client.requestOtp(noOtp = false)
                     val status = r.status
                     val hasCookie = !client.cookie.isNullOrBlank()
-                    val cookieStr = if (hasCookie) "PRESENT" else "ABSENT"
+                    val cookieStr = if (hasCookie) "PRESENT (${client.cookie})" else "ABSENT"
                     val linkedNumber = r.headers["x-amn"] ?: "ABSENT"
                     val isSuccess = (status == 200 && hasCookie)
+
+                    appendLog("[GATEWAY] OTP Request -> HTTP $status | Cookie: $cookieStr | Linked: $linkedNumber")
+                    if (r.rawHeaderLines.isNotEmpty()) {
+                        appendLog("[GATEWAY] Headers received:\n" + r.rawHeaderLines.joinToString("\n"))
+                    }
 
                     val msg = buildString {
                         append("OTP HTTP: ").append(status).append("\n")
                         append("Cookie: ").append(cookieStr).append("\n")
                         append("Linked number: ").append(linkedNumber)
                         if (!isSuccess) {
+                            if (r.rawHeaderLines.isNotEmpty()) {
+                                append("\nHeaders:\n")
+                                for (hl in r.rawHeaderLines.take(5)) {
+                                    append("  ").append(hl).append("\n")
+                                }
+                            }
                             val trimmedBody = r.body.trim()
                             if (trimmedBody.isNotEmpty()) {
-                                append("\nBody: ").append(trimmedBody.take(400))
+                                append("Body: ").append(trimmedBody.take(400))
                                 if (trimmedBody.length > 400) append("...")
                             } else {
-                                append("\nBody: (empty)")
+                                append("Body: (empty)")
                             }
                         }
                     }
@@ -369,6 +380,7 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                     }
                 } catch (e: Exception) {
                     val errorMsg = e.message ?: e.javaClass.simpleName
+                    appendLog("[GATEWAY] OTP Request Exception: $errorMsg")
                     runOnUiThread {
                         otpResultText.setTextColor(Color.parseColor("#DC2626"))
                         otpResultText.text = "OTP HTTP: ERROR\nCookie: ABSENT\nLinked number: ABSENT\nBody: $errorMsg"
@@ -394,16 +406,23 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                 return@setOnClickListener
             }
             otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
-            otpResultText.text = "Verifying OTP..."
+            otpResultText.text = "Verifying OTP ($otp)..."
             btnVerifyOtp.isEnabled = false
 
             Thread {
                 try {
                     val client = gatewayClient ?: return@Thread
+                    appendLog("[GATEWAY] Sending OTP verification for $otp with Cookie: ${client.cookie}")
                     val r = client.verifyOtp(otp)
+                    appendLog("[GATEWAY] Verify response HTTP ${r.status}, body length=${r.body.length}")
+                    if (r.rawHeaderLines.isNotEmpty()) {
+                        appendLog("[GATEWAY] Verify headers:\n" + r.rawHeaderLines.joinToString("\n"))
+                    }
+
                     if (r.body.contains("<wap-provisioningdoc", ignoreCase = true)) {
                         val cfg = SipConfigParser.parse(r.body, client.gatewayIp)
                         cfg.saveToPrefs(this@MainActivity)
+                        appendLog("[GATEWAY] Successfully parsed and saved SIP config for +${cfg.cleanUsername}")
                         runOnUiThread {
                             otpResultText.setTextColor(Color.parseColor("#059669"))
                             otpResultText.text = "OTP verified! Stored profile for +${cfg.cleanUsername}."
@@ -413,18 +432,21 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                             switchTab(0)
                         }
                     } else {
+                        val trimmedBody = r.body.trim()
+                        val bodySnippet = if (trimmedBody.isNotEmpty()) "\nBody: ${trimmedBody.take(300)}" else ""
+                        appendLog("[GATEWAY] OTP verification failed: HTTP ${r.status}\n$trimmedBody")
                         runOnUiThread {
-                            val trimmedBody = r.body.trim()
-                            val bodySnippet = if (trimmedBody.isNotEmpty()) "\nBody: ${trimmedBody.take(300)}" else ""
                             otpResultText.setTextColor(Color.parseColor("#DC2626"))
                             otpResultText.text = "Verification failed: HTTP ${r.status}$bodySnippet"
                             updateVerifyButtonState()
                         }
                     }
                 } catch (e: Exception) {
+                    val errorMsg = e.message ?: e.javaClass.simpleName
+                    appendLog("[GATEWAY] OTP verification error: $errorMsg")
                     runOnUiThread {
                         otpResultText.setTextColor(Color.parseColor("#DC2626"))
-                        otpResultText.text = "Verification error: ${e.message ?: e.javaClass.simpleName}"
+                        otpResultText.text = "Verification error: $errorMsg"
                         updateVerifyButtonState()
                     }
                 }
@@ -604,11 +626,15 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
         }
     }
 
-    override fun onSipLog(log: String) {
+    private fun appendLog(log: String) {
         runOnUiThread {
             sipLogsText.append(log + "\n\n")
             logsScrollView.post { logsScrollView.fullScroll(View.FOCUS_DOWN) }
         }
+    }
+
+    override fun onSipLog(log: String) {
+        appendLog(log)
     }
 
     private fun requestAppPermissions() {
