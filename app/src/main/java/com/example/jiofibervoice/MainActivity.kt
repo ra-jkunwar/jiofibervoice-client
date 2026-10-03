@@ -125,6 +125,7 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
 
         refreshStoredAccountSummary()
         bindSipService()
+        updateVerifyButtonState()
 
         // Auto-discover gateway if not already set
         Thread {
@@ -286,12 +287,15 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
 
         macInfoText.setOnClickListener {
             val newMac = gatewayClient?.resetAppIdentifier()
+            updateVerifyButtonState()
             macInfoText.text = "Client App ID (MAC): $newMac"
+            otpResultText.setTextColor(Color.parseColor("#4B5563"))
             otpResultText.text = "Regenerated App ID: $newMac"
         }
 
         btnCheckDirect.setOnClickListener {
             updateGatewayIpFromEdit()
+            otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
             otpResultText.text = "Checking router whitelist..."
             Thread {
                 try {
@@ -301,34 +305,76 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                         val cfg = SipConfigParser.parse(r.body, client.gatewayIp)
                         cfg.saveToPrefs(this@MainActivity)
                         runOnUiThread {
+                            otpResultText.setTextColor(Color.parseColor("#059669"))
                             otpResultText.text = "Success! Whitelist matched without OTP."
                             refreshStoredAccountSummary()
                             startSipRegistration(cfg)
+                            updateVerifyButtonState()
                         }
                     } else {
                         runOnUiThread {
+                            otpResultText.setTextColor(Color.parseColor("#4B5563"))
                             otpResultText.text = "Device not whitelisted (HTTP ${r.status}). Tap 'Send SMS OTP'."
+                            updateVerifyButtonState()
                         }
                     }
                 } catch (e: Exception) {
-                    runOnUiThread { otpResultText.text = "Check error: ${e.message}" }
+                    runOnUiThread {
+                        otpResultText.setTextColor(Color.parseColor("#DC2626"))
+                        otpResultText.text = "Check error: ${e.message}"
+                        updateVerifyButtonState()
+                    }
                 }
             }.start()
         }
 
         btnRequestOtp.setOnClickListener {
             updateGatewayIpFromEdit()
+            otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
             otpResultText.text = "Requesting OTP from gateway..."
+            btnRequestOtp.isEnabled = false
+            gatewayClient?.cookie = null
+            updateVerifyButtonState()
+
             Thread {
                 try {
                     val client = gatewayClient ?: return@Thread
                     val r = client.requestOtp(noOtp = false)
-                    val mobile = r.headers["x-amn"] ?: "Registered Mobile"
+                    val status = r.status
+                    val hasCookie = !client.cookie.isNullOrBlank()
+                    val cookieStr = if (hasCookie) "PRESENT" else "ABSENT"
+                    val linkedNumber = r.headers["x-amn"] ?: "ABSENT"
+                    val isSuccess = (status == 200 && hasCookie)
+
+                    val msg = buildString {
+                        append("OTP HTTP: ").append(status).append("\n")
+                        append("Cookie: ").append(cookieStr).append("\n")
+                        append("Linked number: ").append(linkedNumber)
+                        if (!isSuccess) {
+                            val trimmedBody = r.body.trim()
+                            if (trimmedBody.isNotEmpty()) {
+                                append("\nBody: ").append(trimmedBody.take(400))
+                                if (trimmedBody.length > 400) append("...")
+                            } else {
+                                append("\nBody: (empty)")
+                            }
+                        }
+                    }
+
                     runOnUiThread {
-                        otpResultText.text = "OTP sent to $mobile (HTTP ${r.status})"
+                        otpResultText.setTextColor(if (isSuccess) Color.parseColor("#059669") else Color.parseColor("#DC2626"))
+                        otpResultText.text = msg
+                        btnRequestOtp.isEnabled = true
+                        updateVerifyButtonState()
                     }
                 } catch (e: Exception) {
-                    runOnUiThread { otpResultText.text = "OTP request error: ${e.message}" }
+                    val errorMsg = e.message ?: e.javaClass.simpleName
+                    runOnUiThread {
+                        otpResultText.setTextColor(Color.parseColor("#DC2626"))
+                        otpResultText.text = "OTP HTTP: ERROR\nCookie: ABSENT\nLinked number: ABSENT\nBody: $errorMsg"
+                        btnRequestOtp.isEnabled = true
+                        updateVerifyButtonState()
+                    }
                 }
             }.start()
         }
@@ -337,10 +383,20 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
             updateGatewayIpFromEdit()
             val otp = otpInputEdit.text.toString().trim()
             if (otp.isEmpty()) {
+                otpResultText.setTextColor(Color.parseColor("#DC2626"))
                 otpResultText.text = "Please enter the OTP"
                 return@setOnClickListener
             }
+            if (gatewayClient?.cookie.isNullOrBlank()) {
+                otpResultText.setTextColor(Color.parseColor("#DC2626"))
+                otpResultText.text = "No OTP session cookie. Please request OTP first."
+                updateVerifyButtonState()
+                return@setOnClickListener
+            }
+            otpResultText.setTextColor(Color.parseColor("#1D4ED8"))
             otpResultText.text = "Verifying OTP..."
+            btnVerifyOtp.isEnabled = false
+
             Thread {
                 try {
                     val client = gatewayClient ?: return@Thread
@@ -349,16 +405,28 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
                         val cfg = SipConfigParser.parse(r.body, client.gatewayIp)
                         cfg.saveToPrefs(this@MainActivity)
                         runOnUiThread {
+                            otpResultText.setTextColor(Color.parseColor("#059669"))
                             otpResultText.text = "OTP verified! Stored profile for +${cfg.cleanUsername}."
+                            updateVerifyButtonState()
                             refreshStoredAccountSummary()
                             startSipRegistration(cfg)
                             switchTab(0)
                         }
                     } else {
-                        runOnUiThread { otpResultText.text = "Verification failed: HTTP ${r.status}" }
+                        runOnUiThread {
+                            val trimmedBody = r.body.trim()
+                            val bodySnippet = if (trimmedBody.isNotEmpty()) "\nBody: ${trimmedBody.take(300)}" else ""
+                            otpResultText.setTextColor(Color.parseColor("#DC2626"))
+                            otpResultText.text = "Verification failed: HTTP ${r.status}$bodySnippet"
+                            updateVerifyButtonState()
+                        }
                     }
                 } catch (e: Exception) {
-                    runOnUiThread { otpResultText.text = "Verification error: ${e.message}" }
+                    runOnUiThread {
+                        otpResultText.setTextColor(Color.parseColor("#DC2626"))
+                        otpResultText.text = "Verification error: ${e.message ?: e.javaClass.simpleName}"
+                        updateVerifyButtonState()
+                    }
                 }
             }.start()
         }
@@ -368,6 +436,7 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
             if (cfg != null) {
                 startSipRegistration(cfg)
             } else {
+                otpResultText.setTextColor(Color.parseColor("#DC2626"))
                 otpResultText.text = "No stored profile. Please pair above first."
             }
         }
@@ -378,14 +447,23 @@ class MainActivity : Activity(), SipEngine.SipEventListener {
 
         btnClearAccount.setOnClickListener {
             SipConfig.clearPrefs(this)
+            gatewayClient?.cookie = null
             sipService?.sipEngine?.stop()
             refreshStoredAccountSummary()
+            updateVerifyButtonState()
+            otpResultText.setTextColor(Color.parseColor("#4B5563"))
             otpResultText.text = "Cleared stored SIP account."
         }
 
         btnClearLogs.setOnClickListener {
             sipLogsText.text = "-- Cleared --\n"
         }
+    }
+
+    private fun updateVerifyButtonState() {
+        val hasCookie = !gatewayClient?.cookie.isNullOrBlank()
+        btnVerifyOtp.isEnabled = hasCookie
+        btnVerifyOtp.alpha = if (hasCookie) 1.0f else 0.5f
     }
 
     private fun updateGatewayIpFromEdit() {

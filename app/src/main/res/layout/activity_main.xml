@@ -437,7 +437,8 @@
                     android:layout_marginTop="6dp"
                     android:text=""
                     android:textColor="#059669"
-                    android:textSize="12sp" />
+                    android:textSize="12sp"
+                    android:textIsSelectable="true" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -465,6 +466,8 @@
                         android:textSize="12sp"
                         android:textColor="#FFFFFF"
                         android:background="#16A34A"
+                        android:enabled="false"
+                        android:alpha="0.5"
                         android:layout_marginStart="8dp" />
                 </LinearLayout>
 

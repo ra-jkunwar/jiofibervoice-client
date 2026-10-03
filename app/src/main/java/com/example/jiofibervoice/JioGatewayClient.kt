@@ -35,7 +35,13 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
 
     var cookie: String?
         get() = prefs.getString("juice_cookie", null)
-        private set(value) { prefs.edit().putString("juice_cookie", value).apply() }
+        set(value) {
+            if (value == null) {
+                prefs.edit().remove("juice_cookie").apply()
+            } else {
+                prefs.edit().putString("juice_cookie", value).apply()
+            }
+        }
 
     data class HttpResponse(val status: Int, val headers: Map<String, String>, val body: String)
 
@@ -85,6 +91,7 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
      * Initiates the OTP registration request against the local gateway HTTPS port.
      */
     fun requestOtp(noOtp: Boolean = false): HttpResponse {
+        cookie = null
         val params = linkedMapOf(
             "IMEI" to "",
             "rcs_profile" to "joyn_blackbird",
@@ -122,8 +129,21 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
         )
 
         response.headers["set-cookie"]?.let { header ->
-            val c = header.substringBefore(';').trim()
-            if (c.isNotBlank()) cookie = c
+            val parts = header.split(";")
+            val cookiePairs = parts.map { it.trim() }.filter {
+                it.contains("=") &&
+                !it.startsWith("path=", ignoreCase = true) &&
+                !it.startsWith("expires=", ignoreCase = true) &&
+                !it.startsWith("max-age=", ignoreCase = true) &&
+                !it.startsWith("domain=", ignoreCase = true) &&
+                !it.startsWith("samesite=", ignoreCase = true)
+            }
+            if (cookiePairs.isNotEmpty()) {
+                cookie = cookiePairs.joinToString("; ")
+            } else {
+                val c = header.substringBefore(';').trim()
+                if (c.isNotBlank()) cookie = c
+            }
         }
 
         return response
@@ -132,7 +152,7 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
     fun verifyOtp(otp: String): HttpResponse {
         require(otp.matches(Regex("\\d{4,8}"))) { "OTP must be numeric" }
         val c = cookie ?: error("No OTP session cookie. Please request OTP first.")
-        return httpsLocal("GET", "/?OTP=${urlEncode(otp)}", mapOf("Cookie" to c))
+        return httpsLocal("GET", "/?OTP=${urlEncode(otp)}", mapOf("Cookie" to c, "User-Agent" to "JioFiberVoiceClient/1.0"))
     }
 
     private fun httpPlain(method: String, path: String): HttpResponse {
@@ -176,11 +196,23 @@ class JioGatewayClient(private val context: Context, var gatewayIp: String) {
         val statusLine = input.readLine() ?: error("Empty HTTP response")
         val status = statusLine.split(" ").getOrNull(1)?.toIntOrNull() ?: -1
         val headers = linkedMapOf<String, String>()
+        val setCookieLines = mutableListOf<String>()
         while (true) {
             val line = input.readLine() ?: break
             if (line.isEmpty()) break
             val idx = line.indexOf(':')
-            if (idx > 0) headers[line.substring(0, idx).trim().lowercase()] = line.substring(idx + 1).trim()
+            if (idx > 0) {
+                val key = line.substring(0, idx).trim().lowercase()
+                val value = line.substring(idx + 1).trim()
+                if (key == "set-cookie") {
+                    setCookieLines.add(value)
+                } else {
+                    headers[key] = value
+                }
+            }
+        }
+        if (setCookieLines.isNotEmpty()) {
+            headers["set-cookie"] = setCookieLines.joinToString("; ")
         }
         val contentLength = headers["content-length"]?.toIntOrNull()
         val body = if (contentLength != null) {
